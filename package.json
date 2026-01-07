@@ -1,0 +1,14 @@
+{
+  "name": "tablet-control",
+  "version": "1.0.0",
+  "description": "Controle de tablets (tombamento) com empréstimo a ACS e manutenção",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "sqlite3": "^5.1.7"
+  }
+}

@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Gestão de Ativos - Tablets</title>
+  
+  <script src="https://unpkg.com/@phosphor-icons/web"></script>
+  
+  <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+  
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <aside class="sidebar">
+    <div class="brand"><i class="ph-fill ph-circles-three-plus"></i><span>SisTablets</span></div>
+    <nav class="nav-menu">
+      <button class="nav-item active" onclick="showView('dashboard')"><i class="ph ph-squares-four"></i> Dashboard</button>
+      <div class="nav-divider">INVENTÁRIO</div>
+      <button class="nav-item" onclick="showView('tablets')"><i class="ph ph-device-tablet-camera"></i> Tablets (Ativos)</button>
+      <button class="nav-item" onclick="showView('reserva')"><i class="ph ph-archive-box"></i> Reserva</button>
+      <button class="nav-item" onclick="showView('maintenance-list')"><i class="ph ph-wrench"></i> Em Manutenção</button>
+      <div class="nav-divider">CADASTROS</div>
+      <button class="nav-item" onclick="showView('professionals')"><i class="ph ph-users"></i> Profissionais</button>
+    </nav>
+  </aside>
+
+  <main class="main-content">
+    
+    <section id="view-dashboard" class="view">
+      <header class="page-header"><h1>Visão Geral</h1></header>
+      <div class="kpi-grid">
+        <div class="kpi-card blue"><div class="icon"><i class="ph ph-device-tablet"></i></div><div class="data"><span class="label">Total Geral</span><strong id="kpiTotal">0</strong></div></div>
+        <div class="kpi-card green"><div class="icon"><i class="ph ph-check-circle"></i></div><div class="data"><span class="label">Em Uso</span><strong id="kpiUse">0</strong></div></div>
+        <div class="kpi-card orange"><div class="icon"><i class="ph ph-wrench"></i></div><div class="data"><span class="label">Manutenção</span><strong id="kpiMaint">0</strong></div></div>
+        <div class="kpi-card purple"><div class="icon"><i class="ph ph-archive-box"></i></div><div class="data"><span class="label">Reserva</span><strong id="kpiReserva">0</strong></div></div>
+      </div>
+      <div class="charts-grid">
+        <div class="card chart-container"><h3>📉 Histórico de Manutenções</h3><div class="chart-wrapper"><canvas id="chartMaintHistory"></canvas></div></div>
+        <div class="card chart-container"><h3>📊 Status do Inventário</h3><div class="chart-wrapper"><canvas id="chartStatus"></canvas></div></div>
+        <div class="card chart-container"><h3>📱 Top 5 Modelos</h3><div class="chart-wrapper"><canvas id="chartModels"></canvas></div></div>
+        <div class="card chart-container"><h3>📍 Top 5 Cidades (Ativos)</h3><div class="chart-wrapper"><canvas id="chartCities"></canvas></div></div>
+      </div>
+    </section>
+
+    <section id="view-tablets" class="view hidden">
+      <header class="page-header">
+        <h1>Tablets (Ativos)</h1>
+        <div style="display:flex; gap:10px">
+            <button class="btn outline" onclick="toggleModal('modalImport')"><i class="ph ph-file-xls"></i> Importar Excel</button>
+            <button class="btn primary" onclick="toggleModal('modalAddTablet')"><i class="ph ph-plus"></i> Novo</button>
+        </div>
+      </header>
+      
+      <div id="bulkActionsTablets" class="bulk-actions hidden">
+          <span><strong id="countSelectedTablets">0</strong> selecionados</span>
+          <button class="btn small outline" onclick="openBulkPrintMenu()"><i class="ph-bold ph-printer"></i> Imprimir Selecionados</button>
+      </div>
+
+      <div class="card">
+        <div class="toolbar-stack">
+          <div class="search-box"><i class="ph ph-magnifying-glass"></i><input id="searchTablets" placeholder="Buscar..." oninput="renderTablets('tablets')" /></div>
+          <div class="filters"><select id="filterCityTablets" onchange="renderTablets('tablets')"></select><select id="filterModelTablets" onchange="renderTablets('tablets')"></select><select id="filterStatusTablets" onchange="renderTablets('tablets')"><option value="">Status</option><option value="Em uso">Em uso</option><option value="Disponível">Disponível</option></select></div>
+        </div>
+        <div class="table-container">
+            <table class="data-table" id="tableTablets">
+                <thead>
+                    <tr>
+                        <th width="40"><input type="checkbox" onchange="toggleSelectAll('tablets', this.checked)"></th>
+                        <th>Tombamento</th><th>Modelo</th><th>Serial</th><th>Status</th><th>Ticket</th><th>Localização Atual</th><th width="160">Ações</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+      </div>
+    </section>
+
+    <section id="view-reserva" class="view hidden">
+      <header class="page-header"><h1>Tablets em Reserva</h1><div style="display:flex; gap:10px"><button class="btn outline" onclick="toggleModal('modalImport')"><i class="ph ph-file-xls"></i> Importar Excel</button><button class="btn primary" onclick="toggleModal('modalAddTablet')"><i class="ph ph-plus"></i> Novo</button></div></header>
+      
+      <div id="bulkActionsReserva" class="bulk-actions hidden">
+          <span><strong id="countSelectedReserva">0</strong> selecionados</span>
+          <button class="btn small outline" onclick="openBulkPrintMenu()"><i class="ph-bold ph-printer"></i> Imprimir Selecionados</button>
+      </div>
+
+      <div class="card">
+        <div class="toolbar-stack">
+          <div class="search-box"><i class="ph ph-magnifying-glass"></i><input id="searchReserva" placeholder="Buscar..." oninput="renderTablets('reserva')" /></div>
+          <div class="filters"><select id="filterCityReserva" onchange="renderTablets('reserva')"></select><select id="filterModelReserva" onchange="renderTablets('reserva')"></select><select id="filterStatusReserva" onchange="renderTablets('reserva')"><option value="">Status</option><option value="Em uso">Em uso</option><option value="Disponível">Disponível</option></select></div>
+        </div>
+        <div class="table-container">
+            <table class="data-table" id="tableReserva">
+                <thead>
+                    <tr>
+                        <th width="40"><input type="checkbox" onchange="toggleSelectAll('reserva', this.checked)"></th>
+                        <th>Tombamento</th><th>Modelo</th><th>Serial</th><th>Status</th><th>Localização</th><th width="160">Ações</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+      </div>
+    </section>
+
+    <section id="view-maintenance-list" class="view hidden">
+      <header class="page-header">
+        <h1>Tablets em Manutenção</h1>
+        <button class="btn outline" onclick="openCitySelectionModal('conserto')">
+            <i class="ph-bold ph-printer"></i> Imprimir Formulário
+        </button>
+      </header>
+      
+      <div id="bulkActionsMaint" class="bulk-actions hidden">
+          <span><strong id="countSelectedMaint">0</strong> selecionados</span>
+          <button class="btn small outline" onclick="openBulkPrintMenu()"><i class="ph-bold ph-printer"></i> Imprimir Selecionados</button>
+      </div>
+
+      <div class="card">
+        <div class="toolbar-stack">
+          <div class="search-box"><i class="ph ph-magnifying-glass"></i><input id="searchMaintList" placeholder="Buscar..." oninput="renderTablets('maintenance')" /></div>
+          <div class="filters"><select id="filterCityMaint" onchange="renderTablets('maintenance')"></select><select id="filterModelMaint" onchange="renderTablets('maintenance')"></select></div>
+        </div>
+        <div class="table-container">
+            <table class="data-table" id="tableMaintList">
+                <thead>
+                    <tr>
+                        <th width="40"><input type="checkbox" onchange="toggleSelectAll('maintenance', this.checked)"></th>
+                        <th>Tombamento</th><th>Modelo</th><th>Serial</th><th>Ticket</th><th>Dono Anterior</th><th width="160">Ações</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+      </div>
+    </section>
+
+    <section id="view-professionals" class="view hidden">
+      <header class="page-header"><h1>Profissionais</h1><button class="btn primary" onclick="toggleModal('modalAddProf')"><i class="ph ph-user-plus"></i> Novo</button></header>
+      <div class="card"><div class="table-container"><table class="data-table" id="tableProfs"><thead><tr><th>Nome</th><th>CPF</th><th>Município</th><th>Ações</th></tr></thead><tbody></tbody></table></div></div>
+    </section>
+  </main>
+
+  <div id="modalImport" class="modal-overlay hidden">
+    <div class="modal large-modal"> <div class="modal-header"><h2>Importar Excel</h2><button class="close-btn" onclick="toggleModal('modalImport')"><i class="ph ph-x"></i></button></div>
+      <div class="modal-body">
+        <div class="row">
+            <div class="form-group grow"><label>1. Arquivo (.xlsx)</label><input type="file" id="importFile" accept=".xlsx, .xls" /></div>
+            <div class="form-group grow hidden" id="sheetSection"><label>2. Escolha a Aba</label><select id="sheetSelect" style="font-weight:bold; border-color:var(--primary)"></select></div>
+        </div>
+        <div id="mappingSection" class="hidden">
+            <div class="alert-box info"><i class="ph-bold ph-arrows-merge"></i> Relacione as colunas da sua planilha (esquerda) com os campos do sistema (direita).</div>
+            <div class="mapping-grid">
+                <div class="map-item"><label>Tombamento*</label><select id="mapTomb" class="map-select"><option value="">-- Ignorar --</option></select></div>
+                <div class="map-item"><label>Nº de Série / IMEI</label><select id="mapSerial" class="map-select"><option value="">-- Ignorar --</option></select></div>
+                <div class="map-item"><label>Modelo</label><select id="mapModel" class="map-select"><option value="">-- Ignorar --</option></select></div>
+                <div class="map-item"><label>Nome (Profissional)</label><select id="mapName" class="map-select"><option value="">-- Ignorar --</option></select></div>
+                <div class="map-item"><label>CPF</label><select id="mapCpf" class="map-select"><option value="">-- Ignorar --</option></select></div>
+                <div class="map-item"><label>Município</label><select id="mapCity" class="map-select"><option value="">-- Ignorar --</option></select></div>
+                <div class="map-item"><label>Unidade de Saúde</label><select id="mapUnit" class="map-select"><option value="">-- Ignorar --</option></select></div>
+                <div class="map-item"><label>Data (Recebimento)</label><select id="mapDate" class="map-select"><option value="">-- Ignorar --</option></select></div>
+            </div>
+        </div>
+        <div class="form-group" style="margin-top:20px">
+            <label>Destino dos Dados (Status)</label>
+            <select id="importType" style="padding:10px;font-weight:bold">
+                <option value="Em uso">Tablets Ativos (Em uso)</option>
+                <option value="Reserva">Reserva (Backup)</option>
+                <option value="Em manutenção">Manutenção (Assistência)</option>
+                <option value="Disponível">Disponível (Estoque)</option>
+            </select>
+        </div>
+        <div id="importLog" class="hidden" style="margin-top:10px;padding:10px;background:#f1f5f9;font-size:12px;max-height:100px;overflow-y:auto;border:1px solid #e2e8f0"></div>
+        <div class="modal-footer"><button type="button" class="btn outline" onclick="toggleModal('modalImport')">Cancelar</button><button type="button" class="btn primary" id="btnProcess" onclick="processImport()" disabled>Processar Importação</button></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="modalLink" class="modal-overlay hidden"><div class="modal"><div class="modal-header"><h2>🔗 Vincular</h2><button class="close-btn" onclick="toggleModal('modalLink')"><i class="ph ph-x"></i></button></div><form id="formLink" class="modal-body"><input type="hidden" name="tablet_id" id="linkTabletId"><div class="alert-box">Tablet: <strong id="linkTabletName"></strong></div><div class="form-group"><label>Profissional</label><select name="professional_id" id="linkProfSelect" required></select></div><div class="form-group"><label>Data</label><input type="date" name="start_date"></div><div class="modal-footer"><button type="submit" class="btn primary full">Confirmar</button></div></form></div></div>
+  <div id="modalMaintEntry" class="modal-overlay hidden"><div class="modal"><div class="modal-header"><h2>🛠️ Entrada Manutenção</h2><button class="close-btn" onclick="toggleModal('modalMaintEntry')"><i class="ph ph-x"></i></button></div><form id="formMaintEntry" class="modal-body"><input type="hidden" name="tablet_id" id="maintEntryTabletId"><div class="alert-box warn">Tablet: <strong id="maintEntryTabletName"></strong></div><div class="form-group"><label>Motivo</label><input name="reason" required></div><div class="form-group"><label>Observações</label><textarea name="notes" rows="3" placeholder="Ex: Acompanha capa, sem carregador..."></textarea></div><div class="form-group"><label>Data</label><input type="date" name="entry_date" required></div><div class="modal-footer"><button type="submit" class="btn warning full">Confirmar Entrada</button></div></form></div></div>
+  <div id="modalMaintExit" class="modal-overlay hidden"><div class="modal"><div class="modal-header"><h2>✅ Saída Manutenção</h2><button class="close-btn" onclick="toggleModal('modalMaintExit')"><i class="ph ph-x"></i></button></div><form id="formMaintExit" class="modal-body"><input type="hidden" name="tablet_id" id="maintExitTabletId"><div class="alert-box success">Tablet: <strong id="maintExitTabletName"></strong></div><div class="form-group"><label>Data</label><input type="date" name="exit_date" required></div><div class="modal-footer"><button type="submit" class="btn success full">Confirmar e Restaurar Dono</button></div></form></div></div>
+  
+  <div id="modalTicket" class="modal-overlay hidden"><div class="modal ticket-modal"><div class="modal-header ticket-header"><div class="icon-circle"><i class="ph ph-clipboard-text"></i></div><h2>Dados para Chamado</h2></div><div class="modal-body"><p style="text-align:center; color:#64748b; font-size:13px; margin-bottom:12px">Copie os dados abaixo para o chamado.</p><div id="ticketSummary" class="ticket-summary"></div><button type="button" class="btn outline full" style="margin-bottom:16px" onclick="copyTicketData()"><i class="ph-bold ph-copy"></i> Copiar Tudo</button><form id="formTicket"><input type="hidden" name="maintenance_id" id="mtId" /><div class="form-group"><label>Nº do Ticket (Gerado)*</label><input name="ticket" class="ticket-input" required autofocus placeholder="123456" /></div><button class="btn primary full mt-2" type="submit">Salvar</button></form></div></div></div>
+
+  <div id="modalAddTablet" class="modal-overlay hidden"><div class="modal"><div class="modal-header"><h2>Novo Tablet</h2><button class="close-btn" onclick="toggleModal('modalAddTablet')"><i class="ph ph-x"></i></button></div><form id="formTablet" class="modal-body"><div class="form-group"><label>Tombamento*</label><input name="tombamento" required /></div><div class="form-group"><label>Serial*</label><input name="serial_number" required /></div><div class="form-group"><label>Modelo*</label><input name="model" required /></div><div class="form-group"><label>Status</label><select name="status"><option value="Disponível">Disponível</option><option value="Reserva">Reserva</option></select></div><div class="modal-footer"><button type="submit" class="btn primary">Salvar</button></div></form></div></div>
+  <div id="modalAddProf" class="modal-overlay hidden"><div class="modal"><div class="modal-header"><h2>Novo Profissional</h2><button class="close-btn" onclick="toggleModal('modalAddProf')"><i class="ph ph-x"></i></button></div><form id="formProf" class="modal-body"><div class="form-group"><label>Nome*</label><input name="name" required /></div><div class="form-group"><label>CPF*</label><input name="cpf" required /></div><div class="form-group"><label>Município*</label><input name="municipality" required /></div><div class="modal-footer"><button type="submit" class="btn primary">Salvar</button></div></form></div></div>
+  
+  <div id="modalHistory" class="modal-overlay hidden"><div class="modal" style="max-height: 85vh;"><div class="modal-header"><h2 id="histTitle">Histórico</h2><button class="close-btn" onclick="toggleModal('modalHistory')"><i class="ph ph-x"></i></button></div><div class="modal-body" style="background-color: #f8fafc; padding: 0;"><div id="timelineContainer"></div></div></div></div>
+
+  <div id="modalPrintSelection" class="modal-overlay hidden">
+    <div class="modal" style="max-width: 400px;">
+      <div class="modal-header">
+        <h2>🖨️ Imprimir Termo</h2>
+        <button class="close-btn" onclick="toggleModal('modalPrintSelection')"><i class="ph ph-x"></i></button>
+      </div>
+      <div class="modal-body">
+        <div class="alert-box info" style="margin-bottom:20px">Documento para: <strong id="printTabletName"></strong></div>
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          <button class="btn outline full" onclick="printTerm('recebimento')"><i class="ph-bold ph-file-text"></i> Termo de Recebimento</button>
+          <button class="btn outline full" onclick="printTerm('reserva')"><i class="ph-bold ph-arrow-u-up-left"></i> Devolução de Reserva</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="modalBulkPrint" class="modal-overlay hidden">
+    <div class="modal" style="max-width: 450px;">
+      <div class="modal-header">
+        <h2>🖨️ Impressão em Lote</h2>
+        <button class="close-btn" onclick="toggleModal('modalBulkPrint')"><i class="ph ph-x"></i></button>
+      </div>
+      <div class="modal-body">
+        <div class="alert-box info">
+          Você selecionou <strong><span id="bulkCount">0</span></strong> tablets.
+        </div>
+        
+        <div class="form-group">
+            <label>Cargo do Responsável (para o termo):</label>
+            <input type="text" id="printRoleInput" placeholder="Ex: Secretária de Saúde, Coordenadora..." />
+        </div>
+
+        <hr style="border:0; border-top:1px dashed #ddd; margin:15px 0;">
+
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          <button class="btn primary full" onclick="printBulkTerm('secretario')">
+            <i class="ph-bold ph-users-three"></i> Termo Entrega Secretário / ACS
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="modalCitySelection" class="modal-overlay hidden">
+    <div class="modal" style="max-width: 400px;">
+      <div class="modal-header">
+        <h2>Selecione o Município</h2>
+        <button class="close-btn" onclick="toggleModal('modalCitySelection')"><i class="ph ph-x"></i></button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+            <label>Para qual cidade é o termo?</label>
+            <select id="selectCityPrint" style="padding:10px; font-weight:bold; width:100%">
+                <option value="CONDE">Conde</option>
+                <option value="JOÃO PESSOA">João Pessoa</option>
+                <option value="SANTA RITA">Santa Rita</option>
+                <option value="CABEDELO">Cabedelo</option>
+                <option value="PADRAO">Outro (Padrão)</option>
+            </select>
+        </div>
+        <button class="btn primary full" onclick="confirmPrintBlank()">
+            <i class="ph-bold ph-printer"></i> Gerar PDF
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+  
+  <script src="models.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
