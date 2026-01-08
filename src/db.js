@@ -44,20 +44,17 @@ async function initDb() {
       created_at TEXT NOT NULL,
       status TEXT NOT NULL,
       is_reserve INTEGER DEFAULT 0,
+      reserve_pin TEXT,  -- NOVA COLUNA: Senha do Tablet Reserva
       maintenance_entry_date TEXT,
       maintenance_exit_date TEXT
     )
   `);
 
-  // --- CORREÇÃO: Tenta adicionar a coluna is_reserve caso ela não exista na tabela antiga ---
-  try {
-    await run(`ALTER TABLE tablets ADD COLUMN is_reserve INTEGER DEFAULT 0`);
-    console.log("Coluna 'is_reserve' adicionada com sucesso!");
-  } catch (err) {
-    // Se der erro, é provável que a coluna já exista, então ignoramos.
-  }
-  // ----------------------------------------------------------------------------------------
+  // MIGRAÇÃO: Adiciona colunas se não existirem (Para bancos já criados)
+  try { await run(`ALTER TABLE tablets ADD COLUMN is_reserve INTEGER DEFAULT 0`); } catch (e) {}
+  try { await run(`ALTER TABLE tablets ADD COLUMN reserve_pin TEXT`); } catch (e) {}
 
+  // Tabela Profissionais
   await run(`
     CREATE TABLE IF NOT EXISTS professionals (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -67,6 +64,7 @@ async function initDb() {
     )
   `);
 
+  // Tabela Vínculos (Assignments)
   await run(`
     CREATE TABLE IF NOT EXISTS assignments (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -74,11 +72,16 @@ async function initDb() {
       professional_id INTEGER NOT NULL,
       start_date TEXT NOT NULL,
       end_date TEXT,
+      attendant_name TEXT, -- NOVA COLUNA: Quem entregou
       FOREIGN KEY (tablet_id) REFERENCES tablets(id) ON DELETE CASCADE,
       FOREIGN KEY (professional_id) REFERENCES professionals(id) ON DELETE RESTRICT
     )
   `);
 
+  // MIGRAÇÃO assignments
+  try { await run(`ALTER TABLE assignments ADD COLUMN attendant_name TEXT`); } catch (e) {}
+
+  // Tabela Manutenções
   await run(`
     CREATE TABLE IF NOT EXISTS maintenances (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

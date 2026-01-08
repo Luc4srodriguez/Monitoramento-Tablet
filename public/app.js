@@ -28,10 +28,7 @@ let currentWorkbook = null;
 let chartInstances = {};
 let headerRowIndex = 0; 
 let sheetMatrix = [];
-let tabletToPrint = null;
-let selectedTablets = new Set(); // Para seleção múltipla
-
-// --- INSTÂNCIA DA CLASSE DE MODELOS PDF ---
+let selectedTablets = new Set(); 
 const modeloGerador = new Modelo(); 
 
 // --- NAVEGAÇÃO ---
@@ -44,31 +41,48 @@ function showView(id) {
   const btn = document.querySelector(`.nav-item[onclick="showView('${id}')"]`);
   if(btn) btn.classList.add('active');
   
-  // Limpa seleção ao mudar de tela
   selectedTablets.clear();
   updateBulkActionUI();
-  
   refreshCurrentView();
 }
 
 function refreshCurrentView() {
   updateDashboard();
   if(!$("#view-dashboard").classList.contains("hidden")) renderCharts();
-  
   if(!$("#view-tablets").classList.contains("hidden")) renderTablets('tablets');
   if(!$("#view-reserva").classList.contains("hidden")) renderTablets('reserva');
   if(!$("#view-maintenance-list").classList.contains("hidden")) renderTablets('maintenance');
-  
   if(!$("#view-professionals").classList.contains("hidden")) renderProfessionals();
 }
 
 function toggleModal(id) {
   const el = $(`#${id}`); if(!el) return;
+  
+  // Limpeza do Import
   if(id === 'modalImport' && el.classList.contains('hidden')) {
     $("#importFile").value = ""; $("#sheetSection").classList.add("hidden"); 
     $("#mappingSection").classList.add("hidden"); $("#importLog").classList.add("hidden"); 
     $("#btnProcess").disabled = true; currentWorkbook = null;
   }
+
+  // Reset Modal Novo Tablet
+  if(id === 'modalAddTablet') {
+      $("#selectStatusTablet").value = "Disponível";
+      handleStatusChange(); 
+      $("#inputProfSearch").value = "";
+      $("#selectCityLink").value = "";
+  }
+
+  // Reset Modal Vincular (CORREÇÃO AQUI)
+  if(id === 'modalLink') {
+      if($("#selectCityBind")) $("#selectCityBind").value = "";
+      if($("#groupProfBind")) $("#groupProfBind").classList.add("hidden");
+      if($("#inputProfBind")) $("#inputProfBind").value = "";
+      // Define data de hoje
+      const dateInput = document.querySelector("#formLink input[type='date']");
+      if(dateInput) dateInput.value = new Date().toISOString().slice(0,10);
+  }
+
   el.classList.contains('hidden') ? el.classList.remove('hidden') : el.classList.add('hidden');
 }
 
@@ -130,22 +144,28 @@ function renderTablets(mode) {
     if(st === "em uso") badge = "info";
 
     let loc = "-";
-    if(st === "em uso") loc = `<div><strong>👤 ${t.professional_name||"?"}</strong><br/><span style="font-size:11px;color:#666">${t.professional_municipality||""}</span></div>`;
-    else if(st === "em manutenção") loc = `<div><strong style="color:#d97706">🛠️ ${t.professional_name||"Sem dono anterior"}</strong><br/><span style="font-size:11px">${t.professional_municipality||""}</span></div>`;
-    else loc = t.is_reserve ? "📦 Depósito" : "✅ Estoque";
+    if(st === "em uso") {
+        loc = `<div><strong>👤 ${t.professional_name||"?"}</strong><br/><span style="font-size:11px;color:#666">${t.professional_municipality||""}</span></div>`;
+        
+        // MOSTRA ATENDENTE
+        if(t.current_attendant) {
+            loc += `<div style="margin-top:4px; font-size:10px; color:#64748b; background:#f1f5f9; padding:2px 4px; border-radius:4px; display:inline-block">Entregue por: ${t.current_attendant}</div>`;
+        }
+        // MOSTRA PIN (SOMENTE SE EM USO E FOR RESERVA)
+        if(t.reserve_pin) {
+            loc += `<div style="margin-top:4px; font-size:11px; color:#6b21a8; font-weight:bold">🔐 PIN: ${t.reserve_pin}</div>`;
+        }
+    } else if(st === "em manutenção") {
+        loc = `<div><strong style="color:#d97706">🛠️ ${t.professional_name||"Sem dono anterior"}</strong><br/><span style="font-size:11px">${t.professional_municipality||""}</span></div>`;
+    } else {
+        loc = t.is_reserve ? "📦 Depósito" : "✅ Estoque";
+    }
 
     const safeTomb = (t.tombamento||"").replace(/'/g,"");
     let btns = "";
-    
-    // Checkbox para seleção em massa
     const isChecked = selectedTablets.has(t.id) ? "checked" : "";
-
-    // Botão de Impressão Padrão (Abre modal de escolha)
-    // OBS: Não aparece na aba manutenção pois lá o termo é o botão de topo
     let btnPrint = "";
-    if (mode !== 'maintenance') {
-        btnPrint = `<button class="btn-icon" onclick="openPrintMenu(${t.id})" title="Imprimir Termo"><i class="ph-bold ph-printer" style="color:#475569"></i></button>`;
-    }
+    if (mode !== 'maintenance') btnPrint = `<button class="btn-icon" onclick="directPrintTerm(${t.id})" title="Imprimir Termo de Recebimento"><i class="ph-bold ph-printer" style="color:#475569"></i></button>`;
 
     if (st === "disponível") {
         btns += `<button class="btn-icon" onclick="openLink(${t.id}, '${safeTomb}')" title="Vincular"><i class="ph-bold ph-link" style="color:var(--primary)"></i></button>`;
@@ -157,7 +177,6 @@ function renderTablets(mode) {
         btns += btnPrint;
     } else if (st === "em manutenção") {
         btns += `<button class="btn-icon" onclick="openMaintExit(${t.id}, '${safeTomb}')" title="Finalizar"><i class="ph-fill ph-check-circle" style="color:#10b981; font-size:22px"></i></button>`;
-        // Não adiciona botão de print aqui, pois o botão de formulário em branco está no topo
     }
     
     if(mode !== 'maintenance') btns += `<button class="btn-icon" onclick="deleteTablet(${t.id})"><i class="ph ph-trash" style="color:#64748b"></i></button>`;
@@ -180,81 +199,259 @@ function renderTablets(mode) {
         <td><div class="actions-cell">${btns}</div></td>
     </tr>`;
   }).join("");
-  
   updateBulkActionUI();
 }
 
-// --- LÓGICA DE IMPRESSÃO ---
-
-// 1. Menu Individual (Recebimento, Reserva)
-window.openPrintMenu = (id) => {
-    tabletToPrint = tablets.find(t => t.id === id);
-    if (!tabletToPrint) return toast("Tablet não encontrado", "error");
-    $("#printTabletName").textContent = tabletToPrint.tombamento;
-    toggleModal("modalPrintSelection");
-};
-
-window.printTerm = (type) => {
-    if (!tabletToPrint) return;
-    // Chama a classe Modelo (models.js)
-    modeloGerador.gerarIndividual(type, tabletToPrint);
-    toggleModal("modalPrintSelection");
-};
-
-// 2. Impressão em Massa (Secretário)
-window.openBulkPrintMenu = () => {
-    if(selectedTablets.size === 0) return toast("Nenhum item selecionado", "warn");
-    $("#bulkCount").textContent = selectedTablets.size;
-    toggleModal("modalBulkPrint");
-};
-
-window.printBulkTerm = (type) => {
-    const items = tablets.filter(t => selectedTablets.has(t.id));
-    if(items.length === 0) return;
+// --- PREENCHIMENTO DE SELECTS E FILTROS ---
+function fillSelects() { 
+    // Cidades Únicas
+    const cities = [...new Set(professionals.map(p => p.municipality).filter(c => c))].sort();
+    const cityOpts = cities.map(c => `<option value="${c}">${c}</option>`).join("");
     
-    const cargo = $("#printRoleInput").value;
-    modeloGerador.gerarLote(type, items, { cargo: cargo });
-    toggleModal("modalBulkPrint");
-};
+    // Filtro do Modal "Novo Tablet"
+    const selectCityNew = $("#selectCityLink");
+    if(selectCityNew) selectCityNew.innerHTML = `<option value="">-- Selecione o Município --</option>` + cityOpts;
 
-// 3. Impressão de Formulário em Branco (Conserto)
-let printDocType = ""; 
+    // Filtro do Modal "Vincular" (CORRIGIDO)
+    const selectCityBind = $("#selectCityBind");
+    if(selectCityBind) selectCityBind.innerHTML = `<option value="">-- Selecione o Município --</option>` + cityOpts;
 
-window.openCitySelectionModal = (type) => {
-    printDocType = type;
-    toggleModal("modalCitySelection");
-};
+    // Datalist do Modal "Novo Profissional"
+    const dlCityAdd = $("#dlCitiesAddProf");
+    if(dlCityAdd) dlCityAdd.innerHTML = cityOpts;
+}
 
-window.confirmPrintBlank = () => {
-    const city = $("#selectCityPrint").value;
-    if (printDocType === 'conserto') {
-        modeloGerador.gerarTermoConsertoEmBranco(city);
+// --- LÓGICA DE FILTRO (NOVO TABLET) ---
+window.handleStatusChange = () => {
+    const status = $("#selectStatusTablet").value;
+    const sectionLink = $("#sectionLinkProf");
+    const groupPin = $("#groupReservePin");
+    
+    if (status === "Reserva") groupPin.classList.remove("hidden");
+    else groupPin.classList.add("hidden");
+
+    if (status === "Em uso") {
+        sectionLink.classList.remove("hidden");
+        $("#selectCityLink").value = "";
+        $("#groupProfSelect").classList.add("hidden");
+        $("#inputProfSearch").value = "";
+        $("#inputLinkDate").value = new Date().toISOString().slice(0,10);
+        $("#inputAttendantName").value = "";
+    } else {
+        sectionLink.classList.add("hidden");
     }
-    toggleModal("modalCitySelection");
 };
 
-// --- MULTI-SELEÇÃO ---
+window.filterProfsByCity = () => {
+    const city = $("#selectCityLink").value;
+    $("#inputProfSearch").value = ""; 
+    if (!city) { $("#groupProfSelect").classList.add("hidden"); return; }
+    const filteredProfs = professionals.filter(p => p.municipality === city);
+    if (filteredProfs.length === 0) toast("Nenhum profissional encontrado nesta cidade.", "warn");
+    $("#dlProfsFiltered").innerHTML = filteredProfs.map(p => `<option value="${p.name} (CPF: ${p.cpf})"></option>`).join("");
+    $("#groupProfSelect").classList.remove("hidden");
+};
+
+// --- LÓGICA DE FILTRO (MODAL VINCULAR) ---
+window.filterProfsForBind = () => {
+    const city = $("#selectCityBind").value;
+    const group = $("#groupProfBind");
+    const input = $("#inputProfBind");
+    const datalist = $("#dlProfsBind");
+
+    input.value = ""; 
+    if (!city) { group.classList.add("hidden"); return; }
+
+    const filteredProfs = professionals.filter(p => p.municipality === city);
+    if (filteredProfs.length === 0) toast("Nenhum profissional encontrado nesta cidade.", "warn");
+    
+    datalist.innerHTML = filteredProfs.map(p => `<option value="${p.name} (CPF: ${p.cpf})"></option>`).join("");
+    group.classList.remove("hidden");
+};
+
+// --- ABRIR MODAIS ---
+window.openLink = (id, t) => { 
+    $("#linkTabletId").value = id; 
+    $("#linkTabletName").textContent = t; 
+    
+    // Limpa campos do modal de vínculo
+    if($("#selectCityBind")) $("#selectCityBind").value = "";
+    if($("#groupProfBind")) $("#groupProfBind").classList.add("hidden");
+    if($("#inputProfBind")) $("#inputProfBind").value = "";
+    
+    toggleModal("modalLink"); 
+};
+
+window.openQuickAddProf = () => toggleModal('modalAddProf');
+
+// --- SUBMIT NOVO TABLET ---
+$("#formTablet").addEventListener("submit", async e => { 
+    e.preventDefault(); 
+    const d = Object.fromEntries(new FormData(e.target)); 
+    
+    const targetStatus = d.status;
+    d.is_reserve = (targetStatus === "Reserva"); 
+    d.status = "Disponível"; 
+
+    if (targetStatus !== "Reserva") delete d.reserve_pin;
+
+    let selectedProfId = null;
+    if (targetStatus === "Em uso") {
+        const profNameInput = $("#inputProfSearch").value;
+        const attendant = $("#inputAttendantName").value;
+
+        if (!profNameInput) return toast("Selecione um profissional.", "warn");
+        if (!attendant) return toast("Informe o Atendente.", "warn");
+
+        const found = professionals.find(p => profNameInput.includes(p.name) || profNameInput.includes(p.cpf));
+        if (!found) return toast("Profissional não encontrado.", "error");
+        selectedProfId = found.id;
+    }
+
+    try { 
+        await api("/api/tablets", {method:"POST", body:JSON.stringify(d)}); 
+        
+        if (targetStatus === "Em uso" && selectedProfId) {
+            const allTablets = await api("/api/tablets");
+            const newTablet = allTablets.find(t => t.tombamento === d.tombamento);
+            if (newTablet) {
+                const linkData = {
+                    tablet_id: newTablet.id,
+                    professional_id: selectedProfId,
+                    start_date: $("#inputLinkDate").value,
+                    attendant_name: $("#inputAttendantName").value
+                };
+                await api("/api/assignments", {method:"POST", body:JSON.stringify(linkData)});
+                toast("Salvo e Vinculado!", "success");
+            }
+        } else {
+            toast("Tablet Salvo!", "success"); 
+        }
+
+        e.target.reset(); 
+        toggleModal("modalAddTablet"); 
+        await loadAll(); 
+    } catch(err){ 
+        toast(err.message, "error"); 
+    } 
+});
+
+// --- SUBMIT VINCULAR (CORRIGIDO) ---
+$("#formLink").addEventListener("submit", async e => { 
+    e.preventDefault(); 
+    try { 
+        // Pega do inputProfBind (que é o campo dentro do modal de vinculo com filtro)
+        const profNameInput = $("#inputProfBind").value; 
+        const found = professionals.find(p => profNameInput.includes(p.name) || profNameInput.includes(p.cpf));
+        
+        if (!found) throw new Error("Profissional não encontrado. Verifique a lista.");
+
+        const d = {
+            tablet_id: Number($("#linkTabletId").value),
+            professional_id: found.id,
+            start_date: e.target.start_date.value,
+            attendant_name: e.target.attendant_name.value
+        };
+
+        await api("/api/assignments", {method:"POST", body:JSON.stringify(d)}); 
+        
+        toast("Vinculado!", "success"); 
+        toggleModal("modalLink"); 
+        await loadAll(); 
+    } catch(err){ 
+        toast(err.message, "error"); 
+    } 
+});
+
+// --- SUBMIT PROFISSIONAL ---
+$("#formProf").addEventListener("submit", async e => { 
+    e.preventDefault(); 
+    try { 
+        const formData = Object.fromEntries(new FormData(e.target));
+        await api("/api/professionals", {method:"POST", body:JSON.stringify(formData)}); 
+        toast("Profissional Salvo!", "success"); 
+        e.target.reset(); 
+        toggleModal("modalAddProf"); 
+        await loadAll(); 
+        
+        // Atualiza listas em tempo real
+        const currentCityNew = $("#selectCityLink").value;
+        const currentCityBind = $("#selectCityBind").value;
+        fillSelects(); 
+
+        if (currentCityNew) { $("#selectCityLink").value = currentCityNew; filterProfsByCity(); }
+        if (currentCityBind) { $("#selectCityBind").value = currentCityBind; filterProfsForBind(); }
+
+    } catch(err){ 
+        toast(err.message, "error"); 
+    } 
+});
+
+// --- RESTO DO CÓDIGO (Print, Histórico, etc.) ---
+window.directPrintTerm = (id) => { const tablet = tablets.find(t => t.id === id); if (!tablet) return toast("Tablet não encontrado", "error"); modeloGerador.gerarIndividual('recebimento', tablet); };
+window.openBulkPrintMenu = () => { if(selectedTablets.size === 0) return toast("Nenhum item selecionado", "warn"); $("#bulkCount").textContent = selectedTablets.size; toggleModal("modalBulkPrint"); };
+window.printBulkTerm = (type) => { const items = tablets.filter(t => selectedTablets.has(t.id)); if(items.length === 0) return; const cargo = $("#printRoleInput").value; modeloGerador.gerarLote(type, items, { cargo: cargo }); toggleModal("modalBulkPrint"); };
+window.printDocAvulso = (tipo) => { const city = $("#selCityDoc").value; if (tipo === 'conserto') modeloGerador.gerarTermoConsertoEmBranco(city); else if (tipo === 'reserva_devolucao') modeloGerador.gerarTermoDevolucaoReservaEmBranco(city); else if (tipo === 'passo_a_passo') modeloGerador.gerarPassoPasso(); };
+window.openCitySelectionModal = (type) => { printDocType = type; toggleModal("modalCitySelection"); };
+window.confirmPrintBlank = () => { const city = $("#selectCityPrint").value; if (printDocType === 'conserto') modeloGerador.gerarTermoConsertoEmBranco(city); toggleModal("modalCitySelection"); };
 window.toggleSelection = (id, checked) => { checked ? selectedTablets.add(id) : selectedTablets.delete(id); updateBulkActionUI(); };
 window.toggleSelectAll = (mode, checked) => { const tableId = (mode === 'tablets') ? '#tableTablets' : (mode === 'reserva' ? '#tableReserva' : '#tableMaintList'); $$(tableId + " tbody input.row-checkbox").forEach(input => { input.checked = checked; const id = parseInt(input.getAttribute('onchange').match(/\d+/)[0]); checked ? selectedTablets.add(id) : selectedTablets.delete(id); }); updateBulkActionUI(); };
 function updateBulkActionUI() { const count = selectedTablets.size; const sets = [{view: 'view-tablets', bar: 'bulkActionsTablets', counter: 'countSelectedTablets'}, {view: 'view-reserva', bar: 'bulkActionsReserva', counter: 'countSelectedReserva'}, {view: 'view-maintenance-list', bar: 'bulkActionsMaint', counter: 'countSelectedMaint'}]; sets.forEach(s => { if(!$(`#${s.view}`).classList.contains('hidden')) { $(`#${s.counter}`).textContent = count; if(count > 0) $(`#${s.bar}`).classList.remove('hidden'); else $(`#${s.bar}`).classList.add('hidden'); } else { $(`#${s.bar}`).classList.add('hidden'); } }); }
-
-// --- OUTRAS FUNÇÕES ---
-window.openHistory = async (id, serial) => { $("#histTitle").textContent = `Histórico: ${serial}`; const container = $("#timelineContainer"); container.innerHTML = '<div style="text-align:center;padding:20px">Carregando...</div>'; toggleModal("modalHistory"); try { const timeline = await api(`/api/tablets/${id}/history`); if(timeline.length === 0) { container.innerHTML = '<div style="padding:20px;color:#666">Nenhum histórico encontrado.</div>'; return; } const html = timeline.map(item => { const dateFmt = new Date(item.date).toLocaleDateString('pt-BR'); let icon = "", color = "", title = "", desc = ""; if(item.type === 'create') { icon = "ph-star"; color = "bg-blue"; title = "Cadastro Inicial"; desc = "Tablet adicionado ao sistema"; } else if (item.type === 'assign') { icon = "ph-user"; color = "bg-green"; title = "Entregue ao Profissional"; desc = `<strong>${item.info}</strong><br/>Data Início: ${dateFmt}`; if(item.end_date) desc += `<br/><span style="font-size:12px;color:#64748b">Devolvido em: ${new Date(item.end_date).toLocaleDateString('pt-BR')}</span>`; else desc += `<br/><span class="badge success" style="margin-top:4px">Ativo Agora</span>`; } else if (item.type === 'maint') { icon = "ph-wrench"; color = "bg-orange"; title = "Entrada em Manutenção"; desc = `Motivo: ${item.info} ${item.ticket ? `(Ticket: ${item.ticket})` : ''}`; if(item.end_date) desc += `<br/><span style="font-size:12px;color:#16a34a">Consertado em: ${new Date(item.end_date).toLocaleDateString('pt-BR')}</span>`; else desc += `<br/><span class="badge warn" style="margin-top:4px">Em Aberto</span>`; } return `<div class="timeline-item"><div class="timeline-icon ${color}"><i class="ph-bold ${icon}"></i></div><div class="timeline-content"><span class="timeline-date">${dateFmt}</span><h3>${title}</h3><p>${desc}</p></div></div>`; }).join(""); container.innerHTML = `<div class="timeline-wrapper">${html}</div>`; } catch(e) { container.innerHTML = `<div class="alert-box warn">Erro ao carregar: ${e.message}</div>`; } };
+window.openHistory = async (id, serial) => { 
+    $("#histTitle").textContent = `Histórico: ${serial}`; 
+    const container = $("#timelineContainer"); 
+    container.innerHTML = '<div style="text-align:center;padding:20px">Carregando...</div>'; 
+    toggleModal("modalHistory"); 
+    try { 
+        const timeline = await api(`/api/tablets/${id}/history`); 
+        if(timeline.length === 0) { 
+            container.innerHTML = '<div style="padding:20px;color:#666">Nenhum histórico encontrado.</div>'; 
+            return; 
+        } 
+        const html = timeline.map(item => { 
+            const dateFmt = new Date(item.date).toLocaleDateString('pt-BR'); 
+            let icon = "", color = "", title = "", desc = ""; 
+            if(item.type === 'create') { 
+                icon = "ph-star"; color = "bg-blue"; title = "Cadastro Inicial"; desc = "Tablet adicionado ao sistema"; 
+            } else if (item.type === 'assign') { 
+                icon = "ph-user"; color = "bg-green"; title = "Entregue ao Profissional"; 
+                desc = `<strong>${item.info}</strong><br/>Data Início: ${dateFmt}`; 
+                if(item.attendant_name) desc += `<br/><span style="font-size:12px;color:#0369a1">Entregue por: <strong>${item.attendant_name}</strong></span>`;
+                if(item.reserve_pin) desc += `<br/><span style="font-size:12px;color:#6b21a8">PIN na época: <strong>${item.reserve_pin}</strong></span>`;
+                if(item.end_date) desc += `<br/><span style="font-size:12px;color:#64748b">Devolvido em: ${new Date(item.end_date).toLocaleDateString('pt-BR')}</span>`; 
+                else desc += `<br/><span class="badge success" style="margin-top:4px">Ativo Agora</span>`; 
+            } else if (item.type === 'maint') { 
+                icon = "ph-wrench"; color = "bg-orange"; title = "Entrada em Manutenção"; 
+                desc = `Motivo: ${item.info} ${item.ticket ? `(Ticket: ${item.ticket})` : ''}`; 
+                if(item.end_date) desc += `<br/><span style="font-size:12px;color:#16a34a">Consertado em: ${new Date(item.end_date).toLocaleDateString('pt-BR')}</span>`; 
+                else desc += `<br/><span class="badge warn" style="margin-top:4px">Em Aberto</span>`; 
+            } 
+            return `<div class="timeline-item"><div class="timeline-icon ${color}"><i class="ph-bold ${icon}"></i></div><div class="timeline-content"><span class="timeline-date">${dateFmt}</span><h3>${title}</h3><p>${desc}</p></div></div>`; 
+        }).join(""); 
+        container.innerHTML = `<div class="timeline-wrapper">${html}</div>`; 
+    } catch(e) { 
+        container.innerHTML = `<div class="alert-box warn">Erro ao carregar: ${e.message}</div>`; 
+    } 
+};
 function renderProfessionals() { $("#tableProfs tbody").innerHTML = professionals.map(p => `<tr><td>${p.name}</td><td>${p.cpf}</td><td>${p.municipality}</td><td><div class="actions-cell"><button class="btn-icon" onclick="deleteProf(${p.id})"><i class="ph ph-trash"></i></button></div></td></tr>`).join(""); }
-function fillSelects() { const o = professionals.map(p => `<option value="${p.id}">${p.name}</option>`).join(""); $("#linkProfSelect").innerHTML = `<option value="">Selecione...</option>` + o; }
-window.openLink = (id,t) => { $("#linkTabletId").value=id; $("#linkTabletName").textContent=t; toggleModal("modalLink"); };
+window.openLink = (id,t) => { 
+    $("#linkTabletId").value=id; 
+    $("#linkTabletName").textContent=t;
+    // Reset Modal Vincular
+    if($("#selectCityBind")) $("#selectCityBind").value = "";
+    if($("#groupProfBind")) $("#groupProfBind").classList.add("hidden");
+    if($("#inputProfBind")) $("#inputProfBind").value = "";
+    toggleModal("modalLink"); 
+};
 window.quickUnlink = async (id) => { if(!confirm("Devolver?")) return; try { await api("/api/assignments/close", {method:"POST", body:JSON.stringify({tablet_id:id})}); toast("Devolvido!", "success"); await loadAll(); } catch(e){ toast(e.message, "error"); } };
 window.openMaintEntry = (id,t) => { $("#maintEntryTabletId").value=id; $("#maintEntryTabletName").textContent=t; toggleModal("modalMaintEntry"); };
 window.openMaintExit = (id,t) => { $("#maintExitTabletId").value=id; $("#maintExitTabletName").textContent=t; toggleModal("modalMaintExit"); };
 window.deleteTablet = async id => { if(confirm("Excluir?")) try { await api(`/api/tablets/${id}`, {method:"DELETE"}); loadAll(); } catch(e){ toast(e.message, "error"); } };
 window.deleteProf = async id => { if(confirm("Excluir?")) try { await api(`/api/professionals/${id}`, {method:"DELETE"}); loadAll(); } catch(e){ toast(e.message, "error"); } };
-$("#formLink").addEventListener("submit", async e => { e.preventDefault(); try { const d = Object.fromEntries(new FormData(e.target)); d.tablet_id=Number(d.tablet_id); d.professional_id=Number(d.professional_id); await api("/api/assignments", {method:"POST", body:JSON.stringify(d)}); toast("Vinculado!", "success"); toggleModal("modalLink"); await loadAll(); } catch(err){ toast(err.message, "error"); } });
 $("#formMaintEntry").addEventListener("submit", async e => { e.preventDefault(); try { const d = Object.fromEntries(new FormData(e.target)); d.tablet_id=Number(d.tablet_id); const r = await api("/api/maintenances/entry", {method:"POST", body:JSON.stringify(d)}); toggleModal("modalMaintEntry"); $("#mtId").value = r.maintenance_id; const profName = r.last_professional ? r.last_professional.name : "Sem dono (Estoque)"; const profCpf = r.last_professional ? r.last_professional.cpf : "N/A"; const obs = r.data.notes || "Nenhuma"; const htmlContent = `<div class="ts-row"><span>Modelo:</span> <strong>${r.tablet.model}</strong></div><div class="ts-row"><span>Tombamento:</span> <strong>${r.tablet.tombamento}</strong></div><div class="ts-row"><span>Série:</span> <strong>${r.tablet.serial_number}</strong></div><div class="ts-divider"></div><div class="ts-row"><span>Nome:</span> <strong>${profName}</strong></div><div class="ts-row"><span>CPF:</span> <strong>${profCpf}</strong></div><div class="ts-divider"></div><div class="ts-row"><span>Motivo:</span> <strong>${r.data.reason}</strong></div><div class="ts-row"><span>Obs:</span> <strong>${obs}</strong></div>`; $("#ticketSummary").innerHTML = htmlContent; const rawText = `Modelo: ${r.tablet.model}\nTombamento: ${r.tablet.tombamento}\nSérie: ${r.tablet.serial_number}\nNome: ${profName}\nCPF: ${profCpf}\nMotivo: ${r.data.reason}\nObs: ${obs}`; $("#ticketSummary").setAttribute("data-copy", rawText); toggleModal("modalTicket"); await loadAll(); } catch(err){ toast(err.message, "error"); } });
 window.copyTicketData = () => { const text = $("#ticketSummary").getAttribute("data-copy"); if(!text) return; navigator.clipboard.writeText(text).then(() => toast("Copiado!", "success")).catch(() => toast("Erro ao copiar", "error")); };
 $("#formMaintExit").addEventListener("submit", async e => { e.preventDefault(); try { const d = Object.fromEntries(new FormData(e.target)); d.tablet_id=Number(d.tablet_id); await api("/api/maintenances/exit", {method:"POST", body:JSON.stringify(d)}); toast("Finalizado e Restaurado!", "success"); toggleModal("modalMaintExit"); await loadAll(); } catch(err){ toast(err.message, "error"); } });
 $("#formTicket").addEventListener("submit", async e => { e.preventDefault(); try { const d = Object.fromEntries(new FormData(e.target)); await api("/api/maintenances/ticket", {method:"POST", body:JSON.stringify(d)}); toast("Salvo!", "success"); toggleModal("modalTicket"); await loadAll(); } catch(err){ toast(err.message, "error"); } });
-$("#formTablet").addEventListener("submit", async e => { e.preventDefault(); const d = Object.fromEntries(new FormData(e.target)); d.is_reserve=(d.status==="Reserva"); if(d.status==="Reserva") d.status="Disponível"; try { await api("/api/tablets", {method:"POST", body:JSON.stringify(d)}); toast("Salvo!", "success"); e.target.reset(); toggleModal("modalAddTablet"); await loadAll(); } catch(err){ toast(err.message, "error"); } });
-$("#formProf").addEventListener("submit", async e => { e.preventDefault(); try { await api("/api/professionals", {method:"POST", body:JSON.stringify(Object.fromEntries(new FormData(e.target)))}); toast("Salvo!", "success"); e.target.reset(); toggleModal("modalAddProf"); await loadAll(); } catch(err){ toast(err.message, "error"); } });
 const normalize = (str) => (str || "").toString().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
 $("#importFile").addEventListener("change", (e) => { const file = e.target.files[0]; if(!file) return; const reader = new FileReader(); reader.readAsArrayBuffer(file); reader.onload = (evt) => { try { const data = new Uint8Array(evt.target.result); currentWorkbook = XLSX.read(data, {type: 'array'}); const select = $("#sheetSelect"); select.innerHTML = `<option value="">-- Selecione a Aba --</option>`; currentWorkbook.SheetNames.forEach(name => { const opt = document.createElement("option"); opt.value = name; opt.textContent = name; select.appendChild(opt); }); $("#sheetSection").classList.remove("hidden"); } catch(err) { toast("Erro: " + err.message, "error"); } }; });
 $("#sheetSelect").addEventListener("change", (e) => { const sheetName = e.target.value; if(!sheetName) return; try { const worksheet = currentWorkbook.Sheets[sheetName]; sheetMatrix = XLSX.utils.sheet_to_json(worksheet, {header: 1, raw: false, dateNF: 'dd/mm/yyyy'}); if(sheetMatrix.length === 0) throw new Error("Aba vazia."); headerRowIndex = -1; for(let i=0; i < Math.min(sheetMatrix.length, 25); i++) { const row = (sheetMatrix[i] || []).map(normalize); if(row.includes("tombamento") || row.includes("serie") || row.includes("ticket") || row.includes("tomb.antigo")) { headerRowIndex = i; break; } } if(headerRowIndex === -1) headerRowIndex = 0; const headers = sheetMatrix[headerRowIndex]; const mappers = ["mapTomb", "mapSerial", "mapModel", "mapName", "mapCpf", "mapCity", "mapUnit", "mapDate"]; mappers.forEach(id => { const select = $(`#${id}`); select.innerHTML = `<option value="">-- Ignorar --</option>`; headers.forEach((h, idx) => { const opt = document.createElement("option"); opt.value = idx; opt.textContent = `${h || "Col " + (idx+1)}`; select.appendChild(opt); }); }); autoMap(headers); $("#mappingSection").classList.remove("hidden"); $("#btnProcess").disabled = false; } catch(err) { toast(err.message, "error"); } });

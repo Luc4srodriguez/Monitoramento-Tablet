@@ -50,15 +50,19 @@ body {
 }
 
 .brand {
-  height: 64px;
+  height: 70px; /* Altura do cabeçalho */
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 0 24px;
-  font-size: 20px;
-  font-weight: 700;
-  color: #60a5fa;
+  justify-content: center; /* Centraliza a logo */
+  padding: 10px 20px;
   border-bottom: 1px solid rgba(255,255,255,0.1);
+  background-color: rgba(0,0,0,0.2); /* Fundo levemente mais escuro para destaque */
+}
+
+.brand-logo {
+  max-height: 100%; /* Garante que a logo não estoure a altura */
+  max-width: 100%;  /* Garante que a logo não estoure a largura */
+  object-fit: contain; /* Ajusta a imagem sem distorcer */
 }
 
 .nav-menu {
