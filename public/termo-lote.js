@@ -4,36 +4,33 @@ class TermoLote extends DocBase {
         const { jsPDF } = window.jspdf;
         const doc = new jsPDF();
         
-        // --- 1. LÓGICA DO MUNICÍPIO (RIGOROSA) ---
-        // Filtra cidades válidas (remove vazios/nulos) e pega valores únicos
+        // --- DADOS ---
         const cidadesUnicas = [...new Set(items.map(t => t.professional_municipality).filter(c => c && c.trim().length > 0))];
-        
         let municipioHeader = "___________________";
-
-        // REGRA: Só preenche se tiver MAIS DE 1 item E todos forem da mesma cidade
         if (items.length > 1 && cidadesUnicas.length === 1) {
             municipioHeader = cidadesUnicas[0].toUpperCase();
         }
 
-        // --- DADOS DO CABEÇALHO ---
         const nomeRecebedor = "________________________________________________________";
         const cpfRecebedor = "____________________________________";
-        
         const cargo = (extraData.cargo && extraData.cargo.trim()) ? extraData.cargo.toUpperCase() : "___________________________";
         
-        // --- MARCA D'ÁGUA ---
+        // ==========================================
+        // PÁGINA 1
+        // ==========================================
+        
+        // 1. Marca D'água da Frente
         this.addWatermark(doc, this.base64BgSecretario, true); 
         
-        // --- TÍTULO ---
+        // 2. Título
         doc.setFont("helvetica", "bold"); 
         doc.setFontSize(14); 
         doc.setTextColor(0, 0, 0);
+        doc.text("TERMO DE ENTREGA - SECRETARIA / ACS", 105, 60, { align: "center" });
         
-        doc.text("TERMO DE ENTREGA - SECRETARIA / ACS", 105, 70, { align: "center" });
-        
-        // --- TEXTO CORRIDO ---
+        // 3. Texto Corrido
         doc.setFont("helvetica", "normal"); 
-        doc.setFontSize(12);
+        doc.setFontSize(11); 
 
         const segmentos = [
             { text: `Eu, ${nomeRecebedor}, CPF nº ${cpfRecebedor}, cargo ${cargo}, lotado na Secretaria Municipal de Saúde de ${municipioHeader}, declaro que recebi da `, bold: false },
@@ -43,12 +40,12 @@ class TermoLote extends DocBase {
 
         const imprimirTextoMisto = (doc, segs, startX, startY) => {
             const maxWidth = 170;
-            const lineHeight = 6;
+            const lineHeight = 5.5; 
             const spaceWidth = doc.getTextWidth(" ");
             let cursorX = startX;
             let cursorY = startY;
 
-            doc.setFontSize(12);
+            doc.setFontSize(11);
             segs.forEach(seg => {
                 doc.setFont("helvetica", seg.bold ? "bold" : "normal");
                 const palavras = seg.text.split(" ");
@@ -62,12 +59,12 @@ class TermoLote extends DocBase {
                     cursorX += larguraPalavra + spaceWidth;
                 });
             });
-            return cursorY + lineHeight + 10;
+            return cursorY + lineHeight + 5; 
         };
 
-        let finalY = imprimirTextoMisto(doc, segmentos, 20, 95);
+        let finalY = imprimirTextoMisto(doc, segmentos, 20, 80);
 
-        // --- TABELA DE ITENS ---
+        // 4. Tabela de Itens (Compacta)
         const tableBody = items.map((t, index) => {
             const hasProf = t.professional_name && t.professional_name.trim().length > 0;
             const profName = hasProf ? String(t.professional_name).toUpperCase() : "---";
@@ -89,9 +86,9 @@ class TermoLote extends DocBase {
             body: tableBody, 
             theme: 'grid', 
             styles: { 
-                fontSize: 9, 
+                fontSize: 8, 
                 font: "helvetica",
-                cellPadding: 3, 
+                cellPadding: 2, 
                 textColor: 0, 
                 lineColor: 0, 
                 lineWidth: 0.1, 
@@ -99,43 +96,48 @@ class TermoLote extends DocBase {
                 halign: 'center' 
             }, 
             headStyles: { 
-                fillColor: [230, 230, 230], 
+                fillColor: [220, 220, 220], 
                 textColor: 0, 
                 fontStyle: 'bold', 
                 halign: 'center' 
             }, 
             columnStyles: { 
-                0: { cellWidth: 10 }, 
+                0: { cellWidth: 8 }, 
                 1: { cellWidth: 25 }, 
                 2: { cellWidth: 25 }, 
                 3: { cellWidth: 30 }, 
                 4: { halign: 'left' }, 
                 5: { cellWidth: 30 } 
             }, 
-            margin: { left: 20, right: 20 } 
+            margin: { left: 20, right: 20 }
         });
         
         finalY = doc.lastAutoTable.finalY || 150;
         
-        if (finalY > 220) { 
-            doc.addPage(); 
-            this.addWatermark(doc, this.base64BgSecretario, true); 
-            finalY = 40; 
-        } else { 
-            finalY += 20; 
-        }
+        // 5. Verificação de Espaço para Assinatura
+        const pageHeight = doc.internal.pageSize.getHeight();
+        const espacoNecessario = 60; 
         
-        // --- DATA EM BRANCO (Direita) ---
-        // Usa a variável municipioHeader (que pode ser o nome da cidade ou traços)
-        const dataEmBranco = `${municipioHeader}, ____ de ____________________ de _______.`;
+        // Se a tabela ocupou muito e não cabe a assinatura, joga para pág 2
+        if (finalY + espacoNecessario > pageHeight - 20) {
+            doc.addPage();
+            // Pág 2 sempre usa o fundo de Instruções
+            this.addWatermark(doc, this.base64BgSecretarioPage2, true);
+            finalY = 60; 
+        } else {
+            finalY += 15;
+        }
+
+        // 6. Data e Assinatura
+        const hoje = new Date(); 
+        const dataExtenso = `${municipioHeader}, ____ de ____________________ de _______.`;
 
         doc.setFont("helvetica", "normal"); 
-        doc.setFontSize(12);
-        doc.text(dataEmBranco, 190, finalY, { align: "right" }); 
+        doc.setFontSize(11);
+        doc.text(dataExtenso, 190, finalY, { align: "right" }); 
         
-        finalY += 35; 
+        finalY += 30; 
         
-        // --- ASSINATURA ---
         doc.setLineWidth(0.5); 
         doc.line(55, finalY, 155, finalY); 
         finalY += 5; 
@@ -143,27 +145,20 @@ class TermoLote extends DocBase {
         doc.setFont("helvetica", "bold"); 
         doc.text("Assinatura do(a) Responsável", 105, finalY, { align: "center" });
         
-        // --- PÁGINA EXTRA (ENVIO) ---
-        doc.addPage(); 
-        this.addWatermark(doc, this.base64BgSecretario, true); 
+        // ==========================================
+        // PÁGINA 2 - INSTRUÇÕES (Só Imagem)
+        // ==========================================
         
-        const pageHeight = doc.internal.pageSize.getHeight(); 
-        let yFooter = pageHeight / 2; 
+        // Sempre garantimos que existe a página de instruções/verso.
+        // Se a assinatura ainda está na página 1, criamos a 2.
+        // Se a assinatura já foi jogada para a página 2, a imagem já está lá (addWatermark acima).
         
-        doc.setFont("helvetica", "normal"); 
-        doc.setFontSize(12); 
-        doc.setTextColor(0, 0, 0); 
+        if (doc.getCurrentPageInfo().pageNumber === 1) {
+            doc.addPage();
+            this.addWatermark(doc, this.base64BgSecretarioPage2, true);
+        }
         
-        doc.text("Enviar toda documentação", 105, yFooter, { align: "center" }); 
-        yFooter += 7; 
-        doc.text("assinada para o nosso", 105, yFooter, { align: "center" }); 
-        yFooter += 7; 
-        doc.text("e-mail:", 105, yFooter, { align: "center" }); 
-        yFooter += 15;
-        
-        doc.setFont("helvetica", "bold"); 
-        doc.setFontSize(14); 
-        doc.text("suporte@novetech.com.br", 105, yFooter, { align: "center" });
+        // NÃO ESCREVEMOS MAIS NADA AQUI (A IMAGEM JÁ TEM O TEXTO)
         
         window.open(doc.output('bloburl'), '_blank'); 
         
