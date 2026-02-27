@@ -1,6 +1,6 @@
 # Controle de Tablets (ACS / Manutenção)
 
-Sistema web simples para controlar tablets por **tombamento**, incluindo:
+Sistema web simples para controlar tablets por **tombamento**, incluindo.
 - Cadastro de tablets (tombamento, nº série, modelo, data)
 - Cadastro de profissionais (Nome, CPF, Município)
 - Vínculo tablet ↔ profissional (status **Em uso**)
