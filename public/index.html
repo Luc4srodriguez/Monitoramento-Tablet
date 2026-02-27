@@ -239,7 +239,60 @@
   <div id="modalHistory" class="modal-overlay hidden"><div class="modal large-modal"><div class="modal-header"><h2 id="histTitle">Histórico</h2><button class="close-btn" onclick="toggleModal('modalHistory')"><i class="ph-bold ph-x"></i></button></div><div class="modal-body bg-body"><div id="timelineContainer"></div></div></div></div>
   <div id="modalPrintSelection" class="modal-overlay hidden"><div class="modal"><div class="modal-header"><h2>Imprimir</h2><button class="close-btn" onclick="toggleModal('modalPrintSelection')"><i class="ph-bold ph-x"></i></button></div><div class="modal-body"><div class="alert-box info mb-4">Tablet: <strong id="printTabletName"></strong></div><button class="btn white full" onclick="printTerm('recebimento')">Termo de Recebimento</button></div></div></div>
   <div id="modalBulkPrint" class="modal-overlay hidden"><div class="modal"><div class="modal-header"><h2>Impressão em Lote</h2><button class="close-btn" onclick="toggleModal('modalBulkPrint')"><i class="ph-bold ph-x"></i></button></div><div class="modal-body"><div class="alert-box info mb-4">Tablets: <strong id="bulkCount"></strong></div><div class="form-group"><label>Cargo do Responsável</label><input type="text" id="printRoleInput" class="upper" oninput="handleUpper(this)" /></div><button class="btn purple full" onclick="printBulkTerm('secretario')">Gerar PDF</button></div></div></div>
-  <div id="modalDocsAvulsos" class="modal-overlay hidden"><div class="modal"><div class="modal-header"><h2>Documentos</h2><button class="close-btn" onclick="toggleModal('modalDocsAvulsos')"><i class="ph-bold ph-x"></i></button></div><div class="modal-body"><div class="form-group"><label>Município</label><select id="selCityDoc"><option value="PADRAO">PADRÃO</option><option value="CONDE">CONDE</option><option value="JOÃO PESSOA">JOÃO PESSOA</option><option value="SANTA RITA">SANTA RITA</option><option value="CABEDELO">CABEDELO</option></select></div><div class="vstack"><button class="btn white full flex-sb" onclick="printDocAvulso('conserto')"><span>Termo Conserto</span><i class="ph-bold ph-printer"></i></button><button class="btn white full flex-sb" onclick="printDocAvulso('reserva_devolucao')"><span>Devolução Reserva</span><i class="ph-bold ph-printer"></i></button><button class="btn white full flex-sb" onclick="printDocAvulso('passo_a_passo')"><span>Passo a Passo</span><i class="ph-bold ph-list-numbers"></i></button></div></div></div></div>
+  
+  <div id="modalDocsAvulsos" class="modal-overlay hidden">
+      <div class="modal">
+          <div class="modal-header">
+              <h2>Documentos Avulsos</h2>
+              <button class="close-btn" onclick="toggleModal('modalDocsAvulsos')"><i class="ph-bold ph-x"></i></button>
+          </div>
+          <div class="modal-body">
+              <div class="form-group">
+                  <label>1. Selecione o Município</label>
+                  <input list="dlCitiesDoc" id="selCityDoc" class="upper" placeholder="DIGITE O MUNICÍPIO" oninput="handleUpper(this); checkSavedBgs()">
+                  <datalist id="dlCitiesDoc">
+                      <option value="JOÃO PESSOA"></option>
+                      <option value="SANTA RITA"></option>
+                      <option value="CABEDELO"></option>
+                      <option value="CONDE"></option>
+                  </datalist>
+              </div>
+
+              <div class="alert-box info" style="font-size: 11px; display: flex; justify-content: space-between; margin-bottom: 16px;">
+                  <span id="statusBgConserto">Conserto: ❌ Padrão</span>
+                  <span id="statusBgReserva">Reserva: ❌ Padrão</span>
+              </div>
+
+              <div class="vstack">
+                  <button class="btn white full flex-sb" onclick="printDocAvulso('conserto')">
+                      <span>🖨️ Gerar Termo Conserto</span>
+                  </button>
+                  <button class="btn white full flex-sb" onclick="printDocAvulso('reserva_devolucao')">
+                      <span>🖨️ Gerar Devolução Reserva</span>
+                  </button>
+                  <button class="btn white full flex-sb" onclick="printDocAvulso('passo_a_passo')">
+                      <span>🖨️ Gerar Passo a Passo</span>
+                  </button>
+              </div>
+
+              <hr style="margin: 20px 0; border: 0; border-top: 1px dashed var(--border);">
+
+              <div class="form-group" style="background: var(--bg-body); padding: 12px; border-radius: 8px;">
+                  <label style="color: var(--primary); font-weight: bold;">💾 Cadastrar Fundo para a Cidade</label>
+                  <select id="selBgType" style="margin-bottom: 8px; margin-top: 8px;">
+                      <option value="conserto">Para Termo de Conserto</option>
+                      <option value="reserva_devolucao">Para Devolução de Reserva</option>
+                  </select>
+                  <input type="file" id="docBgImage" accept="image/png, image/jpeg" style="font-size: 13px; padding: 6px; background: #fff;" />
+                  <button class="btn purple full" style="margin-top: 12px;" onclick="saveCityBg()">Vincular Imagem ao Município</button>
+                  <div style="text-align: center; margin-top: 8px;">
+                      <span style="font-size: 10px; color: var(--text-muted); cursor: pointer;" onclick="saveCityBg(true)">Deseja apagar o fundo desta cidade? Clique aqui.</span>
+                  </div>
+              </div>
+          </div>
+      </div>
+  </div>
+
   <div id="modalCitySelection" class="modal-overlay hidden"><div class="modal"><div class="modal-header"><h2>Cidade</h2><button class="close-btn" onclick="toggleModal('modalCitySelection')"><i class="ph-bold ph-x"></i></button></div><div class="modal-body"><div class="form-group"><label>Para qual cidade?</label><select id="selectCityPrint"><option value="CONDE">CONDE</option><option value="JOÃO PESSOA">JOÃO PESSOA</option><option value="SANTA RITA">SANTA RITA</option><option value="CABEDELO">CABEDELO</option><option value="PADRAO">PADRÃO</option></select></div><button class="btn purple full" onclick="confirmPrintBlank()">Gerar</button></div></div></div>
 
   <div id="toast" class="toast hidden"></div>

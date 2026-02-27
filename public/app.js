@@ -304,12 +304,14 @@ function closeModal(id) {
 
   document.body.classList.remove('no-scroll');
   modalState.openId = null;
+  
+  // --- CORREÇÃO DO ERRO DE FOCUS AQUI ---
   if (modalState.lastFocus && typeof modalState.lastFocus.focus === 'function') {
-    setTimeout(() => modalState.lastFocus.focus(), 0);
+    const elToFocus = modalState.lastFocus; // Salvamos a referência numa variável local
+    setTimeout(() => elToFocus.focus(), 0);
   }
   modalState.lastFocus = null;
 }
-
 function toggleModal(id) {
   const overlay = $(`#${id}`); if (!overlay) return;
   overlay.classList.contains('hidden') ? openModal(id) : closeModal(id);
@@ -582,28 +584,37 @@ window.openEditTablet = (id) => {
     handleStatusChange(); toggleModal('modalAddTablet');
 };
 
-// IMPRESSÃO DIRETA - INDIVIDUAL (CORRIGIDA)
+// IMPRESSÃO DIRETA - INDIVIDUAL (CORRIGIDA DEFINITIVAMENTE)
 window.printDirectTerm = (id) => {
     const t = tablets.find(x => x.id === id);
     if(!t) return toast("Tablet não encontrado", "error");
     
-    // Cria uma cópia dos dados para manipular
     const dados = { ...t };
 
-    // --- CORREÇÃO: Garante o município correto ---
-    // Tenta pegar do profissional, senão tenta do próprio tablet (reserva), senão fica vazio
-    dados.municipality = dados.professional_municipality || dados.municipio || "NÃO INFORMADO";
+    // Pegamos a cidade correta (do profissional ou do tablet reserva)
+    const cidadeCorreta = dados.professional_municipality || dados.municipio || "NÃO INFORMADO";
+    
+    // Forçamos TODAS as chaves possíveis, principalmente a do profissional
+    dados.municipality = cidadeCorreta;
+    dados.municipio = cidadeCorreta;
+    dados.cidade = cidadeCorreta;
+    dados.professional_municipality = cidadeCorreta; // <--- O SEGREDO ESTÁ AQUI
 
-    // 1. Mapeia CPF se necessário
-    if (dados.professional_cpf) dados.cpf = dados.professional_cpf;
-
-    // 2. Limpa o nome removendo (ACS) ou (ACE)
-    if (dados.professional_name) {
-        dados.professional_name = dados.professional_name
-            .replace(/^\(ACS\)\s+/, "")
-            .replace(/^\(ACE\)\s+/, "")
-            .trim();
-        dados.name = dados.professional_name;
+    // Limpa os dados do profissional se o tablet NÃO estiver "em uso"
+    if (normSt(dados.status) !== "em uso") {
+        dados.name = "";
+        dados.cpf = "";
+        dados.professional_name = "";
+        dados.professional_cpf = "";
+    } else {
+        if (dados.professional_cpf) dados.cpf = dados.professional_cpf;
+        if (dados.professional_name) {
+            dados.professional_name = dados.professional_name
+                .replace(/^\(ACS\)\s+/, "")
+                .replace(/^\(ACE\)\s+/, "")
+                .trim();
+            dados.name = dados.professional_name;
+        }
     }
 
     try {
@@ -935,14 +946,22 @@ window.printBulkTerm = (type) => {
     let items = tablets.filter(t => selectedTablets.has(t.id));
     if(items.length === 0) return;
 
-    // Normaliza os dados para o gerador (garante campo municipality e name)
     items = items.map(item => {
+        const emUso = normSt(item.status) === "em uso";
+        const cidadeCorreta = item.professional_municipality || item.municipio || "NÃO INFORMADO";
+        
         return {
             ...item,
-            // Prioriza professional_municipality, se não tiver, usa municipio (reserva), senão vazio
-            municipality: item.professional_municipality || item.municipio || "NÃO INFORMADO",
-            // Garante nome limpo
-            name: (item.professional_name || "").replace(/^\(ACS\)\s+|^\(ACE\)\s+/g, "").trim()
+            // Força a cidade em todas as variáveis
+            municipality: cidadeCorreta,
+            municipio: cidadeCorreta,
+            cidade: cidadeCorreta,
+            professional_municipality: cidadeCorreta, // <--- O SEGREDO ESTÁ AQUI TAMBÉM
+            
+            name: emUso ? (item.professional_name || "").replace(/^\(ACS\)\s+|^\(ACE\)\s+/g, "").trim() : "",
+            cpf: emUso ? (item.professional_cpf || item.cpf || "") : "",
+            professional_name: emUso ? item.professional_name : "",
+            professional_cpf: emUso ? item.professional_cpf : ""
         };
     });
 
@@ -951,7 +970,93 @@ window.printBulkTerm = (type) => {
     toggleModal("modalBulkPrint"); 
 };
 
-window.printDocAvulso = (tipo) => { const city = $("#selCityDoc").value; if (tipo === 'conserto') modeloGerador.gerarTermoConsertoEmBranco(city); else if (tipo === 'reserva_devolucao') modeloGerador.gerarTermoDevolucaoReservaEmBranco(city); else if (tipo === 'passo_a_passo') modeloGerador.gerarPassoPasso(); };
+// --- SISTEMA DE CADASTRO DE FUNDOS POR MUNICÍPIO ---
+
+// 1. Função que comprime a imagem para não travar o navegador
+function compressImageToBase64(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = (e) => {
+            const img = new Image();
+            img.src = e.target.result;
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                canvas.width = img.width;
+                canvas.height = img.height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0);
+                // Converte para JPEG e reduz a qualidade para 60% (tamanho ideal)
+                resolve(canvas.toDataURL('image/jpeg', 0.6));
+            };
+        };
+        reader.onerror = error => reject(error);
+    });
+}
+
+// 2. Função que atualiza o painel mostrando se a cidade tem imagem vinculada
+window.checkSavedBgs = () => {
+    const city = ($("#selCityDoc").value || "").trim().toUpperCase();
+    if(!city) {
+        $("#statusBgConserto").innerHTML = "Conserto: ❌ Padrão";
+        $("#statusBgReserva").innerHTML = "Reserva: ❌ Padrão";
+        return;
+    }
+    const temConserto = localStorage.getItem(`bg_conserto_${city}`);
+    const temReserva = localStorage.getItem(`bg_reserva_devolucao_${city}`);
+    
+    $("#statusBgConserto").innerHTML = temConserto ? "Conserto: ✅ Cadastrado" : "Conserto: ❌ Padrão";
+    $("#statusBgReserva").innerHTML = temReserva ? "Reserva: ✅ Cadastrado" : "Reserva: ❌ Padrão";
+};
+
+// 3. Função que salva a imagem para a cidade (ou apaga se solicitado)
+window.saveCityBg = async (isDelete = false) => {
+    const city = ($("#selCityDoc").value || "").trim().toUpperCase();
+    if(!city) return toast("Digite o município primeiro!", "warn");
+
+    const tipo = $("#selBgType").value;
+    const key = `bg_${tipo}_${city}`;
+    const fileInput = $("#docBgImage");
+
+    // Lógica para apagar
+    if (isDelete) {
+        if(confirm(`Tem certeza que deseja apagar o fundo de ${tipo.toUpperCase()} de ${city}?`)) {
+            localStorage.removeItem(key);
+            toast("Fundo removido com sucesso!", "success");
+            checkSavedBgs();
+        }
+        return;
+    }
+
+    if (!fileInput.files.length) return toast("Selecione uma imagem para vincular.", "warn");
+
+    try {
+        toast("Processando imagem...", "info");
+        const base64 = await compressImageToBase64(fileInput.files[0]);
+        
+        // Salva na memória do navegador
+        localStorage.setItem(key, base64);
+        
+        toast(`Fundo de ${tipo} vinculado a ${city}!`, "success");
+        fileInput.value = ""; // Limpa o campo
+        checkSavedBgs(); // Atualiza os ✅
+    } catch (e) {
+        toast("Erro! Imagem muito grande ou navegador sem espaço.", "error");
+        console.error(e);
+    }
+};
+
+// 4. Função principal que manda gerar o PDF com a imagem salva
+window.printDocAvulso = (tipo) => { 
+    const city = ($("#selCityDoc").value || "___________________").trim().toUpperCase();
+    
+    // Procura na memória se existe um fundo salvo para essa cidade + tipo
+    const customBg = localStorage.getItem(`bg_${tipo}_${city}`);
+
+    if (tipo === 'conserto') modeloGerador.gerarTermoConsertoEmBranco(city, customBg); 
+    else if (tipo === 'reserva_devolucao') modeloGerador.gerarTermoDevolucaoReservaEmBranco(city, customBg); 
+    else if (tipo === 'passo_a_passo') modeloGerador.gerarPassoPasso(); 
+};
 window.openCitySelectionModal = (type) => { toggleModal("modalCitySelection"); };
 
 // --- CORREÇÃO DE DOC AVULSO (Cidade em branco) ---

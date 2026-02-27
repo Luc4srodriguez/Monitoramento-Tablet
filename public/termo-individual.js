@@ -12,9 +12,10 @@ class TermoIndividual extends DocBase {
         const nome = hasProf ? t.professional_name.toUpperCase() : "_____________________________________________________________________";
         const cpf = hasProf ? (t.professional_cpf || "________________________") : "__________________";
         
-        // Correção solicitada: Município também obedece à regra do profissional
-        // Se não tem profissional, não sabemos a cidade, então deixa em branco.
-        const municipio = hasProf ? (t.professional_municipality || "___________________").toUpperCase() : "___________________";
+        // --- A GRANDE CORREÇÃO AQUI ---
+        // Busca a cidade usando qualquer uma das variáveis possíveis, INDEPENDENTE de ter profissional
+        const cidadeValidada = t.professional_municipality || t.municipality || t.municipio || t.cidade;
+        const municipio = cidadeValidada ? cidadeValidada.toUpperCase() : "___________________";
 
         const modelo = t.model || "___________";
         const tombamento = t.tombamento || "_________________";
