@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="pt-br" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Login</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
+</head>
+<body>
+  <div class="login-page">
+    <div class="login-card">
+      <div class="login-inner">
+        <div class="login-logo">
+          <img class="brand-logo logo-light" src="novetech logo - BLACK.png" alt="Logo" onerror="document.getElementById('loginLogoFallback').classList.remove('hidden'); this.style.display='none'" />
+          <img class="brand-logo logo-dark" src="novetech logo - WHITE.png" alt="Logo" onerror="document.getElementById('loginLogoFallback').classList.remove('hidden'); this.style.display='none'" />
+          <div id="loginLogoFallback" class="brand-fallback hidden">
+            <span class="brand-fallback-dot"></span>
+            <span>Seu Logo</span>
+          </div>
+        </div>
+
+        <h1 class="login-title">Entrar</h1>
+        <p class="login-subtitle">Acesse o painel com segurança</p>
+
+        <div id="loginError" class="login-error"></div>
+
+        <form id="loginForm" class="login-form" autocomplete="on">
+          <div class="form-group">
+            <label for="username">Usuário</label>
+            <input id="username" name="username" type="text" placeholder="Digite seu usuário" required autofocus />
+          </div>
+
+          <div class="form-group">
+            <label for="password">Senha</label>
+            <input id="password" name="password" type="password" placeholder="Digite sua senha" required />
+          </div>
+
+          <button class="btn primary login-btn" type="submit">
+            <i class="ph ph-lock-key"></i>
+            Entrar
+          </button>
+        </form>
+
+        <div class="login-theme-mini">
+          <div class="theme-switch-wrapper" id="themeToggle">
+            <div class="theme-icon"><i class="ph-fill ph-sun"></i></div>
+            <span id="themeLabel">Modo Claro</span>
+            <div class="theme-icon hidden" id="moonIcon"><i class="ph-fill ph-moon"></i></div>
+          </div>
+        </div>
+
+        <div class="login-hint">
+          Dica: altere o usuário/senha no servidor com <b>AUTH_USER</b> e <b>AUTH_PASS</b>.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Tema (igual ao app)
+    function updateThemeIcon(theme) {
+      const label = document.getElementById('themeLabel');
+      const moon = document.getElementById('moonIcon');
+      const sun = document.querySelector('.theme-icon:not(#moonIcon)');
+      if (theme === 'dark') {
+        label.textContent = 'Modo Escuro';
+        moon.classList.remove('hidden');
+        sun.classList.add('hidden');
+      } else {
+        label.textContent = 'Modo Claro';
+        moon.classList.add('hidden');
+        sun.classList.remove('hidden');
+      }
+    }
+
+    (function initTheme(){
+      const saved = localStorage.getItem('theme') || 'light';
+      document.documentElement.setAttribute('data-theme', saved);
+      updateThemeIcon(saved);
+    })();
+
+    document.getElementById('themeToggle').addEventListener('click', () => {
+      const html = document.documentElement;
+      const current = html.getAttribute('data-theme');
+      const next = current === 'dark' ? 'light' : 'dark';
+      html.setAttribute('data-theme', next);
+      localStorage.setItem('theme', next);
+      updateThemeIcon(next);
+    });
+
+    // Login
+    const form = document.getElementById('loginForm');
+    const errBox = document.getElementById('loginError');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      errBox.classList.remove('show');
+      errBox.textContent = '';
+
+      const payload = {
+        username: document.getElementById('username').value.trim(),
+        password: document.getElementById('password').value
+      };
+
+      try {
+        const res = await fetch('/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Falha ao autenticar');
+        window.location.href = '/';
+      } catch (err) {
+        errBox.textContent = err.message || 'Erro ao autenticar';
+        errBox.classList.add('show');
+      }
+    });
+  </script>
+</body>
+</html>

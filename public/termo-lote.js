@@ -4,11 +4,21 @@ class TermoLote extends DocBase {
         const { jsPDF } = window.jspdf;
         const doc = new jsPDF();
         
-        // --- DADOS ---
-        const cidadesUnicas = [...new Set(items.map(t => t.professional_municipality).filter(c => c && c.trim().length > 0))];
+        // --- CORREÇÃO DA CIDADE ---
+        // 1. Buscamos por 'municipality' (que foi tratado no app.js) em vez de 'professional_municipality'
+        // 2. Removemos nomes vazios ou nulos
+        const cidadesUnicas = [...new Set(items.map(t => t.municipality).filter(c => c && c.trim().length > 0 && c !== "NÃO INFORMADO"))];
+        
         let municipioHeader = "___________________";
-        if (items.length > 1 && cidadesUnicas.length === 1) {
+        
+        // Se todos os itens selecionados pertencem à mesma cidade (ou se é apenas 1 item), preenchemos o cabeçalho.
+        if (cidadesUnicas.length === 1) {
             municipioHeader = cidadesUnicas[0].toUpperCase();
+            
+            // Se a cidade não tiver a UF (ex: "JOÃO PESSOA"), adicionamos " - PB" por padrão (Opcional)
+            if (!municipioHeader.includes("-")) {
+                municipioHeader += " - PB";
+            }
         }
 
         const nomeRecebedor = "________________________________________________________";
@@ -26,7 +36,7 @@ class TermoLote extends DocBase {
         doc.setFont("helvetica", "bold"); 
         doc.setFontSize(14); 
         doc.setTextColor(0, 0, 0);
-        doc.text("TERMO DE ENTREGA - SECRETARIA / ACS", 105, 60, { align: "center" });
+        doc.text("TERMO DE ENTREGA - SECRETARIA", 105, 60, { align: "center" });
         
         // 3. Texto Corrido
         doc.setFont("helvetica", "normal"); 
@@ -66,9 +76,9 @@ class TermoLote extends DocBase {
 
         // 4. Tabela de Itens (Compacta)
         const tableBody = items.map((t, index) => {
-            const hasProf = t.professional_name && t.professional_name.trim().length > 0;
-            const profName = hasProf ? String(t.professional_name).toUpperCase() : "---";
-            const profCpf = hasProf ? String(t.professional_cpf) : "---";
+            // Usa os dados normalizados do app.js (name e cpf) ou tenta os originais
+            const profName = t.name ? String(t.name).toUpperCase() : (t.professional_name ? String(t.professional_name).toUpperCase() : "---");
+            const profCpf = t.cpf ? String(t.cpf) : (t.professional_cpf ? String(t.professional_cpf) : "---");
             
             return [
                 String(index + 1), 
@@ -129,8 +139,14 @@ class TermoLote extends DocBase {
         }
 
         // 6. Data e Assinatura
-        const hoje = new Date(); 
-        const dataExtenso = `${municipioHeader}, ____ de ____________________ de _______.`;
+        const hoje = new Date();
+        const meses = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+        
+        // Usamos municipioHeader aqui também para preencher a linha da data
+        const cidadeParaData = (municipioHeader !== "___________________") ? municipioHeader : "___________________";
+        
+        // Deixamos dia e ano em branco conforme padrão do documento
+        const dataExtenso = `${cidadeParaData}, ____ de ____________________ de _______.`;
 
         doc.setFont("helvetica", "normal"); 
         doc.setFontSize(11);
@@ -149,16 +165,10 @@ class TermoLote extends DocBase {
         // PÁGINA 2 - INSTRUÇÕES (Só Imagem)
         // ==========================================
         
-        // Sempre garantimos que existe a página de instruções/verso.
-        // Se a assinatura ainda está na página 1, criamos a 2.
-        // Se a assinatura já foi jogada para a página 2, a imagem já está lá (addWatermark acima).
-        
         if (doc.getCurrentPageInfo().pageNumber === 1) {
             doc.addPage();
             this.addWatermark(doc, this.base64BgSecretarioPage2, true);
         }
-        
-        // NÃO ESCREVEMOS MAIS NADA AQUI (A IMAGEM JÁ TEM O TEXTO)
         
         window.open(doc.output('bloburl'), '_blank'); 
         
