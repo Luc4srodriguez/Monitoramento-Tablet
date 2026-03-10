@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Login</title>
+  <title>Login - NOVETECH</title>
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
 </head>
@@ -16,7 +16,7 @@
           <img class="brand-logo logo-dark" src="novetech logo - WHITE.png" alt="Logo" onerror="document.getElementById('loginLogoFallback').classList.remove('hidden'); this.style.display='none'" />
           <div id="loginLogoFallback" class="brand-fallback hidden">
             <span class="brand-fallback-dot"></span>
-            <span>Seu Logo</span>
+            <span>NOVETECH</span>
           </div>
         </div>
 
@@ -50,15 +50,12 @@
           </div>
         </div>
 
-        <div class="login-hint">
-          Dica: altere o usuário/senha no servidor com <b>AUTH_USER</b> e <b>AUTH_PASS</b>.
-        </div>
       </div>
     </div>
   </div>
 
   <script>
-    // Tema (igual ao app)
+    // Gerenciador de Tema
     function updateThemeIcon(theme) {
       const label = document.getElementById('themeLabel');
       const moon = document.getElementById('moonIcon');
@@ -89,7 +86,7 @@
       updateThemeIcon(next);
     });
 
-    // Login
+    // Submissão do Formulário
     const form = document.getElementById('loginForm');
     const errBox = document.getElementById('loginError');
 
