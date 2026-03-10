@@ -468,7 +468,7 @@ function renderTablets(mode) {
     else btns += `<button class="btn icon" onclick="openMaintExit(${t.id}, '${t.tombamento}')"><i class="ph-fill ph-check-circle" style="color:var(--success)"></i></button>`;
     if(mode !== 'maintenance') btns += `<button class="btn icon" onclick="deleteTablet(${t.id})"><i class="ph ph-trash"></i></button>`;
 
-    let tkt = t.ticket ? `<span style="font-size:11px; background:#f3f4f6; padding:2px 6px; border-radius:4px">${t.ticket}</span>` : "-";
+    let tkt = t.ticket ? `<span class="ticket-badge">${t.ticket}</span>` : "-";
     
     let mid = `<td><span class="badge-status ${badgeClass}">${badgeText}</span></td><td>${tkt}</td><td>${loc}</td>`;
     if(mode==='maintenance') mid = `<td>${tkt}</td><td>${t.professional_name || '-'}</td>`;
@@ -1143,6 +1143,190 @@ window.openHistory = async (id, serial) => {
         console.error(e);
         container.innerHTML = `<div class="alert-box warn">Erro ao carregar histórico: ${e.message}</div>`;
     }
+};
+
+// ==========================================
+// --- LÓGICA DE IMPORTAÇÃO DE EXCEL ---
+// ==========================================
+
+// 1. Lê o arquivo Excel quando o usuário seleciona
+$("#importFile").addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    try {
+        const data = await file.arrayBuffer();
+        currentWorkbook = XLSX.read(data, { type: 'array' });
+        
+        const sheetSelect = $("#sheetSelect");
+        sheetSelect.innerHTML = '<option value="">-- Escolha a Aba --</option>' + 
+            currentWorkbook.SheetNames.map(name => `<option value="${name}">${name}</option>`).join("");
+        
+        $("#sheetSection").classList.remove("hidden");
+        $("#mappingSection").classList.add("hidden");
+        $("#btnProcess").disabled = true;
+    } catch (err) {
+        toast("Erro ao ler arquivo Excel", "error");
+        console.error(err);
+    }
+});
+
+// 2. Lê os cabeçalhos da aba selecionada e tenta adivinhar as colunas
+$("#sheetSelect").addEventListener("change", (e) => {
+    const sheetName = e.target.value;
+    if (!sheetName) {
+        $("#mappingSection").classList.add("hidden");
+        $("#btnProcess").disabled = true;
+        return;
+    }
+
+    const worksheet = currentWorkbook.Sheets[sheetName];
+    sheetMatrix = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+    
+    if (sheetMatrix.length === 0) return toast("Aba vazia", "warn");
+
+    headerRowIndex = 0;
+    const headers = sheetMatrix[headerRowIndex] || [];
+    
+    const mapSelects = $$(".map-select");
+    mapSelects.forEach(select => {
+        select.innerHTML = '<option value="">-- IGNORAR --</option>' + 
+            headers.map((h, i) => `<option value="${i}">${h || `Coluna ${i+1}`}</option>`).join("");
+    });
+
+    // Tenta Auto-Mapear pelo nome das colunas
+    headers.forEach((h, i) => {
+        const hNorm = normSt(h);
+        if (hNorm.includes("tombamento") || hNorm.includes("patrimônio")) $("#mapTomb").value = i;
+        if (hNorm.includes("serial") || hNorm.includes("imei")) $("#mapSerial").value = i;
+        if (hNorm.includes("modelo")) $("#mapModel").value = i;
+        if (hNorm.includes("nome") || hNorm.includes("profissional") || hNorm.includes("acs")) $("#mapName").value = i;
+        if (hNorm.includes("cpf")) $("#mapCpf").value = i;
+        if (hNorm.includes("cidade") || hNorm.includes("município") || hNorm.includes("municipio")) $("#mapCity").value = i;
+    });
+
+    $("#mappingSection").classList.remove("hidden");
+    $("#btnProcess").disabled = false;
+});
+
+// 3. Processa e salva no banco de dados
+window.processImport = async () => {
+    const sheetName = $("#sheetSelect").value;
+    const targetStatus = $("#importType").value;
+    if (!sheetName) return;
+
+    // Mapeamento escolhido pelo usuário
+    const mapping = {
+        tombamento: $("#mapTomb").value,
+        serial: $("#mapSerial").value,
+        model: $("#mapModel").value,
+        name: $("#mapName").value,
+        cpf: $("#mapCpf").value,
+        city: $("#mapCity").value,
+    };
+
+    if (mapping.tombamento === "" || mapping.serial === "") {
+        return toast("Tombamento e Serial são OBRIGATÓRIOS no mapeamento!", "error");
+    }
+
+    const logBox = $("#importLog");
+    logBox.innerHTML = "";
+    logBox.classList.remove("hidden");
+    $("#btnProcess").disabled = true;
+
+    const addLog = (msg, isError = false) => {
+        const div = document.createElement("div");
+        div.textContent = msg;
+        div.style.color = isError ? "var(--danger)" : "var(--success)";
+        div.style.fontSize = "12px";
+        div.style.padding = "2px 0";
+        logBox.appendChild(div);
+        logBox.scrollTop = logBox.scrollHeight;
+    };
+
+    let successCount = 0;
+    let errorCount = 0;
+
+    // Começa na linha 1 (pulando a linha 0, que é o cabeçalho)
+    for (let i = headerRowIndex + 1; i < sheetMatrix.length; i++) {
+        const row = sheetMatrix[i];
+        if (!row || row.length === 0) continue;
+
+        const val = (idx) => {
+            if(idx === "" || idx === undefined || idx === null) return "";
+            return (row[idx] || "").toString().trim().toUpperCase();
+        };
+
+        const tombamento = val(mapping.tombamento);
+        const serial = val(mapping.serial);
+        const model = val(mapping.model) || "T295";
+        let profName = mapping.name ? val(mapping.name) : "";
+        let profCpf = mapping.cpf ? val(mapping.cpf) : "";
+        let city = mapping.city ? val(mapping.city) : "";
+
+        if (!tombamento || !serial) continue;
+
+        try {
+            // 1. Cria o Tablet
+            let tabletPayload = {
+                tombamento: tombamento,
+                serial_number: serial,
+                model: model,
+                status: targetStatus === "Em uso" ? "Disponível" : targetStatus, 
+                is_reserve: targetStatus === "Reserva",
+                municipio: targetStatus === "Reserva" ? city : null,
+            };
+
+            await api("/api/tablets", { method: "POST", body: JSON.stringify(tabletPayload) });
+            
+            // 2. Se for "Em uso", gerencia o vínculo e o profissional
+            if (targetStatus === "Em uso" && profName) {
+                
+                // Tenta achar ou criar o profissional
+                let profId = null;
+                if (profCpf) {
+                    const existingProf = professionals.find(p => p.cpf === profCpf);
+                    if (existingProf) profId = existingProf.id;
+                }
+
+                if (!profId) {
+                    const newProf = await api("/api/professionals", {
+                        method: "POST",
+                        body: JSON.stringify({ name: profName, cpf: profCpf || "000.000.000-00", municipality: city || "NÃO INFORMADO" })
+                    });
+                    profId = newProf.id;
+                    professionals.push({ id: profId, name: profName, cpf: profCpf, municipality: city }); // atualiza cache
+                }
+
+                // Vincula o tablet ao profissional recém criado/encontrado
+                const allTablets = await api("/api/tablets");
+                const createdTablet = allTablets.find(t => t.tombamento === tombamento);
+
+                if (createdTablet && profId) {
+                    await api("/api/assignments", {
+                        method: "POST",
+                        body: JSON.stringify({
+                            tablet_id: createdTablet.id,
+                            professional_id: profId,
+                            start_date: new Date().toISOString().slice(0, 10),
+                            attendant_name: "IMPORTAÇÃO EM LOTE"
+                        })
+                    });
+                }
+            }
+
+            successCount++;
+            addLog(`✅ Linha ${i}: ${tombamento} importado.`);
+        } catch (e) {
+            errorCount++;
+            addLog(`❌ Linha ${i} (${tombamento}): ${e.message}`, true);
+        }
+    }
+
+    addLog(`--- FIM: ${successCount} Sucessos, ${errorCount} Erros ---`);
+    await loadAll(); // Atualiza tabelas e gráficos
+    $("#btnProcess").disabled = false;
+    toast("Processamento concluído!", "info");
 };
 
 // Init
